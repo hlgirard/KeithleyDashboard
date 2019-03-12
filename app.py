@@ -11,7 +11,6 @@ import plotly.figure_factory as ff
 import plotly.graph_objs as go
 import dash_daq as daq
 
-
 #########################
 # Dashboard Layout / View
 #########################
@@ -59,7 +58,7 @@ app.layout = html.Div([
                 daq.ToggleSwitch(
                     id='toggle_live_saved',
                     label=["Live","Saved"],
-                    style={'width': '100px', 'margin': 'auto'},
+                    style={'width': '100px', "padding-left": 30},
                     value=False,
                 )
             ], className="col-2"),
@@ -68,30 +67,10 @@ app.layout = html.Div([
             html.Div([
                 dcc.Dropdown(
                     id='dropdown_saved_files',
-                    options = [
-                        {'label': 'placeholder', 'value': 'placeholder'}
-                    ],
-                    value = ['placeholder'],
+                    multi = True,
+                    disabled = False,
                 )
             ], className = "col-5"),
-
-            # Empty div to separated
-            html.Div(className = "col-2"),
-
-            # Mode selector
-            html.Div([
-                html.H2(
-                    'Mode',
-                    style = {'font-family': 'Helvetica'},
-                ),
-                daq.ToggleSwitch(
-                    id='toggle_constant_feedback',
-                    label=['Constant', 'Feedback'],
-                    style={'width': '100px'},
-                    value = 'Constant',
-                )
-            ], style = {'float': 'left'}, className = "col-3")
-
         ],
         className = 'row'
     ),
@@ -107,35 +86,66 @@ app.layout = html.Div([
             )
         ], className = "col-9"),
 
-        # Parameter selection
+        # Mode and parameter
         html.Div([
-            html.Label('Experiment Name', style = {'margin-top' : '20'}),
-            html.Br(),
-            dcc.Input(
-                id = 'input_exp_name',
-                type = 'text',
-            ),
-            html.Br(),
-            html.Label('Voltage', style = {'margin-top' : '20'}),
-            html.Br(),
-            dcc.Input(
-                id = 'input_voltage_value',
-                type = 'number',
-                value = 0,
-                step = 0.1,
-                style = {'float': 'left'},
-            ),
-            html.Br(),
-            html.Label('Autostop', style = {'margin-top' : '20'}),
-            html.Br(),
-            daq.ToggleSwitch(
-                id = "toggle_autostop",
-                label = ["Off", "On"],
-                style = {'width': '100px'},
-                value = 'Off',
+            # Mode selector
+            html.Div([
+                html.H2(
+                    'Mode',
+                    style = {'font-family': 'Helvetica'},
+                ),
+                daq.ToggleSwitch(
+                    id='toggle_constant_feedback',
+                    label=['Constant', 'Feedback'],
+                    style={'width': '200px'},
+                    value = 'Constant',
+                )
+            ]),
+
+            # Parameter Selection
+            html.Div([
+                html.H2(
+                    'Parameters',
+                    style = {'font-family': 'Helvetica', 'margin-top' : '20'},
+                ),
+                html.Label('Experiment Name', style = {'margin-top' : '20'}),
+                html.Br(),
+                dcc.Input(
+                    id = 'input_exp_name',
+                    type = 'text',
+                ),
+                html.Br(),
+                html.Label('Voltage', style = {'margin-top' : '20'}),
+                html.Br(),
+                dcc.Input(
+                    id = 'input_voltage_value',
+                    type = 'number',
+                    value = 0,
+                    step = 0.1,
+                    style = {'float': 'left'},
+                ),
+                html.Br(),
+                html.Br(),
+                html.Label('Autostop'),
+                html.Br(),
+                daq.ToggleSwitch(
+                    id = "toggle_autostop",
+                    label = ["Off", "On"],
+                    style = {'width': '100px'},
+                    value = 'Off',
+                )
+            ], id = "div_parameter_selection"),
+
+            # Run experiment
+            html.Button(
+                'Run',
+                id = "button-run-experiment",
+                style = {'margin': 'auto', 'margin-top': '25'},
+                className = "btn btn-primary"
             )
+
         ], className = "col-3")
-    ], id = "div_parameter_selection", className = "row"),
+    ], className = "row"),
 
     # Instrument connection
     html.Div([
@@ -145,6 +155,7 @@ app.layout = html.Div([
             daq.PowerButton(
                 id = "button_instrument_connect",
                 on = False,
+                style = {"padding-left": 30}
             )
         ], className = "col-1"),
 
@@ -168,16 +179,135 @@ app.layout = html.Div([
             )
         ], className = "col-3"),
 
-    ], className = 'row')
+    ], className = 'row'),
 
-])
+    # Live measurements
+    html.Div([
+
+        # Voltage
+        html.Div([
+            html.Label(
+                'Voltage (V):',
+                ),
+            html.Br(),
+            daq.LEDDisplay(
+                id = "led_voltage",
+                value = 0.0
+            )
+        ], className = 'col-3'),
+
+        # Current
+        html.Div([
+            html.Label(
+                'Current (mA):',
+                ),
+            html.Br(),
+            daq.LEDDisplay(
+                id = "led_current",
+                value = 000
+            )
+        ], className = 'col-3')
+
+    ], className = 'row justify-content-around'),
+
+    dcc.Interval(
+            id='interval-component',
+            interval=1*1000, # in milliseconds
+            n_intervals=0
+        )
+
+], className = '.container')
 
 
 #############################################
 # Interaction Between Components / Controller
 #############################################
 
+# Populate the saved file dropdown
+@app.callback(
+    Output('dropdown_saved_files', 'options'),
+    [
+        Input('interval-component', 'n_intervals'),
+    ]
+)
+def populate_dropdown(n_int):
+    list_data = [file for file in os.listdir('data') if file.endswith('.pkl')]
 
+    return [{'label': file.split('.')[0], 'value': file} for file in list_data]
+
+#  Disable dropdown when live data is selected
+@app.callback(
+    Output('dropdown_saved_files', 'disabled'),
+    [
+        Input('toggle_live_saved', 'value')
+    ]
+)
+def disable(live_saved):
+    if live_saved: # Saved
+        return False
+    elif not live_saved: # Live
+        return True
+
+# Empty the dropdown when live data is selected
+@app.callback(
+    Output('dropdown_saved_files', 'value'),
+    [
+        Input('toggle_live_saved', 'value')
+    ]
+)
+def disable(live_saved):
+    if live_saved: # Saved
+        pass
+    elif not live_saved: # Live
+        return None
+
+# Update the graph
+@app.callback(
+    Output('plot_current', 'figure'),
+    [
+        Input('toggle_live_saved', 'value'),
+        Input('dropdown_saved_files', 'value')
+    ]
+)
+def display_plot(live_saved, file_names = None):
+    if live_saved: # Saved
+        # Generate graph
+        return gen_plot_saved(file_names)
+    else: # Live
+        return go.Figure()
+
+
+def gen_plot_saved(file_names):
+
+    data_cur = []
+
+    if file_names is None:
+        return
+
+    for filename in file_names:
+
+        df = pd.read_pickle('data/' + filename)
+
+        for volt in df.columns[1:]:
+            data_cur.append(go.Scatter(
+                x = df["Time"],
+                y = df[volt],
+                name = str(volt) + " V",
+                legendgroup =  filename
+            ))
+
+    fig_cur = go.Figure(
+    data_cur,
+    layout = go.Layout(
+        xaxis=dict(title='Time (s)',range=[0, 100], gridwidth=1, zeroline=False),
+        yaxis=dict(title='Current (mA/cm<sup>2</sup>)', range=[0, 60]),
+        )
+    )
+
+    return fig_cur
+
+
+        
 
 
 # start Flask server
