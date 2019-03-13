@@ -90,6 +90,7 @@ app.layout = html.Div([
                 id = "plot_current",
                 style = {'margin-top': '20'},
                 figure = fig_empty_default,
+                animate = True
             )
         ], className = "col-9"),
 

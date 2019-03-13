@@ -9,40 +9,6 @@ import numpy as np
 
 from .generic_instruments import Instrument, INTF_PROLOGIX
 
-
-def fake_iv_relation(
-    src_type,
-    src_val,
-    v_oc=20.5,
-    i_sc=3.45,
-    c1=0.000002694,
-    c2=0.077976842
-):
-    """model of solar cell IV curve
-    source: https://www.sciencedirect.com/science/article/pii/S1658365512600120
-
-    src_type should be either 'I' or 'V'
-    """
-    # Make sure the format is a numpy array
-    src_val = np.append(np.array([]), src_val) * 2.1
-    # Prepare an answer based on the size of the input
-    answer = np.zeros(np.size(src_val))
-
-    if src_type == 'I':
-        # Values of the input smaller than the short circuit current
-        idx_ok = np.where(src_val < i_sc)
-        answer[idx_ok] = c2 * v_oc \
-            * np.log(1 + (1 - src_val[idx_ok] / i_sc) / c1)
-        return answer
-    elif src_type == 'V':
-        # Values of the input smaller than the open circuit voltage
-        idx_ok = np.where(src_val < v_oc)
-        answer[idx_ok] =  \
-            i_sc \
-            * (1 - c1 * (np.exp(src_val[idx_ok] / (c2 * v_oc)) - 1))
-        return answer
-
-
 INTERFACE = INTF_PROLOGIX
 
 SRC_TYPES = [
@@ -142,7 +108,7 @@ class KT2400(Instrument):
                     answer = float(answer.split(',')[0])
                     # Check that the value is not larger than the compliance
                     if answer >= self.voltage_compliance:
-                        print("Measured voltage is at compliance level")
+                        print("Measured voltage is above compliance level")
                 else:
                     answer = np.random.random()
 
@@ -196,10 +162,7 @@ class KT2400(Instrument):
                 print("The source type should be either 'I' or 'V'")
                 answer = np.nan
         else:
-            answer = np.round(
-                np.squeeze(fake_iv_relation(instr_param, src_val)),
-                4
-            )
+            answer = np.random.random()
         return answer
 
     def measure_voltage(self):
