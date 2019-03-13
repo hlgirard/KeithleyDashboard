@@ -21,6 +21,12 @@ app.css.append_css({
     "external_url": "https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css"
 })
 
+# Default empty Figure
+fig_empty_default = go.Figure(data = [], layout = go.Layout(
+    xaxis=dict(title='Time (s)',range=[0, 20], gridwidth=1),
+    yaxis=dict(title='Current (mA)', range=[0, 20]),
+    ))
+
 # Main layout
 app.layout = html.Div([
 
@@ -82,7 +88,8 @@ app.layout = html.Div([
         html.Div([
             dcc.Graph(
                 id = "plot_current",
-                style = {'margin-top': '20'}
+                style = {'margin-top': '20'},
+                figure = fig_empty_default,
             )
         ], className = "col-9"),
 
@@ -95,15 +102,11 @@ app.layout = html.Div([
                     style = {'font-family': 'Helvetica'},
                 ),
                 daq.ToggleSwitch(
-                    id='toggle_constant_feedback',
-                    label=['Constant', 'Feedback'],
+                    id='toggle_voltage_current',
+                    label=['Voltage', 'Current'],
                     style={'width': '200px'},
-                    value = 'Constant',
-                )
-            ]),
-
-            # Parameter Selection
-            html.Div([
+                    value = False,
+                ),
                 html.H2(
                     'Parameters',
                     style = {'font-family': 'Helvetica', 'margin-top' : '20'},
@@ -114,8 +117,12 @@ app.layout = html.Div([
                     id = 'input_exp_name',
                     type = 'text',
                 ),
-                html.Br(),
-                html.Label('Voltage', style = {'margin-top' : '20'}),
+                html.Br()
+            ]),
+
+            # Parameter Selection - Voltage Mode
+            html.Div([
+                html.Label('Voltage (V)', style = {'margin-top' : '20'}),
                 html.Br(),
                 dcc.Input(
                     id = 'input_voltage_value',
@@ -126,15 +133,52 @@ app.layout = html.Div([
                 ),
                 html.Br(),
                 html.Br(),
-                html.Label('Autostop'),
+                html.Label('Max current (mA)', style = {'margin-top' : '20'}),
                 html.Br(),
-                daq.ToggleSwitch(
-                    id = "toggle_autostop",
-                    label = ["Off", "On"],
-                    style = {'width': '100px'},
-                    value = 'Off',
-                )
-            ], id = "div_parameter_selection"),
+                dcc.Input(
+                    id = 'input_max_current',
+                    type = 'number',
+                    value = 0,
+                    step = 5,
+                    style = {'float': 'left'},
+                ),
+            ], style = {'display': 'block'}, id = "div_parameter_selection_voltage"),
+
+            # Parameter Selection - Current Mode
+            html.Div([
+                html.Label('Current (mA)', style = {'margin-top' : '20'}),
+                html.Br(),
+                dcc.Input(
+                    id = 'input_current_value',
+                    type = 'number',
+                    value = 0,
+                    step = 0.1,
+                    style = {'float': 'left'},
+                ),
+                html.Br(),
+                html.Br(),
+                html.Label('Max voltage (V)', style = {'margin-top' : '20'}),
+                html.Br(),
+                dcc.Input(
+                    id = 'input_max_voltage',
+                    type = 'number',
+                    value = 0,
+                    step = 0.1,
+                    style = {'float': 'left'},
+                ),
+            ], style = {'display': 'none'}, id = "div_parameter_selection_current"),
+
+            # Toggle autostop
+            html.Br(),
+            html.Br(),
+            html.Label('Autostop'),
+            html.Br(),
+            daq.ToggleSwitch(
+                id = "toggle_autostop",
+                label = ["Off", "On"],
+                style = {'width': '100px'},
+                value = 'Off',
+            ),
 
             # Run experiment
             html.Button(
@@ -223,16 +267,18 @@ app.layout = html.Div([
 # Interaction Between Components / Controller
 #############################################
 
+##### Live/Saved Switch and Dropdown #####
+
 # Populate the saved file dropdown
 @app.callback(
     Output('dropdown_saved_files', 'options'),
     [
-        Input('interval-component', 'n_intervals'),
+        Input('toggle_live_saved', 'value'),
     ]
 )
-def populate_dropdown(n_int):
-    list_data = [file for file in os.listdir('data') if file.endswith('.pkl')]
+def populate_dropdown(live_saved):
 
+    list_data = [file for file in os.listdir('data') if file.endswith('.pkl')]
     return [{'label': file.split('.')[0], 'value': file} for file in list_data]
 
 #  Disable dropdown when live data is selected
@@ -261,6 +307,8 @@ def disable(live_saved):
     elif not live_saved: # Live
         return None
 
+##### Graph Update #####
+
 # Update the graph
 @app.callback(
     Output('plot_current', 'figure'),
@@ -271,23 +319,65 @@ def disable(live_saved):
 )
 def display_plot(live_saved, file_names = None):
     if live_saved: # Saved
-        # Generate graph
+        # Generate graph from saved data
         return gen_plot_saved(file_names)
     else: # Live
-        return go.Figure()
+        # Return the default figure
+        return fig_empty_default
 
+
+##### Mode selection #####
+
+# Display / Hide Voltage parameters
+@app.callback(
+    Output('div_parameter_selection_voltage', 'style'),
+    [
+        Input('toggle_voltage_current', 'value')
+    ]
+)
+def display_voltage_parameter(toggle_value):
+
+    if toggle_value: # Current mode
+        return {'display': 'none'}
+    else: # Voltage mode
+        return {'display': 'block'}
+
+# Display / Hide Current parameters
+@app.callback(
+    Output('div_parameter_selection_current', 'style'),
+    [
+        Input('toggle_voltage_current', 'value')
+    ]
+)
+def display_voltage_parameter(toggle_value):
+
+    if toggle_value: # Current mode
+        return {'display': 'block'}
+    else: # Voltage mode
+        return {'display': 'none'}
+
+#############################################
+# Model / Data Retrieval
+#############################################
 
 def gen_plot_saved(file_names):
 
     data_cur = []
 
+    # When no files are selected, return to empty default
     if file_names is None:
-        return
+        return fig_empty_default
 
+    # Initialize variables for plot layout
+    max_time = 20
+    max_current = 20
+
+    # Read all selected data files and add them to the figure
     for filename in file_names:
 
         df = pd.read_pickle('data/' + filename)
 
+        # TODO: adapt this code to the new structure of the dataframe
         for volt in df.columns[1:]:
             data_cur.append(go.Scatter(
                 x = df["Time"],
@@ -296,11 +386,16 @@ def gen_plot_saved(file_names):
                 legendgroup =  filename
             ))
 
+            max_time = int(np.max([max_time, np.max(df["Time"])]))
+            max_current = int(1.05 * np.max([max_current, np.max(df[volt])]))
+
+        
+
     fig_cur = go.Figure(
     data_cur,
     layout = go.Layout(
-        xaxis=dict(title='Time (s)',range=[0, 100], gridwidth=1, zeroline=False),
-        yaxis=dict(title='Current (mA/cm<sup>2</sup>)', range=[0, 60]),
+        xaxis=dict(title='Time (s)',range=[0, max_time], gridwidth=1),
+        yaxis=dict(title='Current (mA)', range=[0, max_current]),
         )
     )
 
