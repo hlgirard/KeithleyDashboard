@@ -5,7 +5,7 @@ from time import time
 
 # Dash
 import dash
-from dash.dependencies import Input, Output
+from dash.dependencies import Input, Output, State
 import dash_core_components as dcc
 import dash_html_components as html
 import plotly.figure_factory as ff
@@ -31,6 +31,9 @@ fig_empty_default = go.Figure(data = [], layout = go.Layout(
     xaxis=dict(title='Time (s)',range=[0, 20], gridwidth=1),
     yaxis=dict(title='Current (mA)', range=[0, 20]),
     ))
+
+# Initialize a global Sourcemeter object
+scm = None
 
 # Main layout
 app.layout = html.Div([
@@ -205,6 +208,9 @@ app.layout = html.Div([
             daq.PowerButton(
                 id = "button_instrument_connect",
                 on = False,
+                label = "Connect",
+                labelPosition = "bottom",
+                disabled=True,
                 style = {"padding-left": 30}
             )
         ], className = "col-1"),
@@ -223,7 +229,7 @@ app.layout = html.Div([
         html.Div([
             html.Label('Status: '),
             html.Label(
-                'NOT CONNECTED',
+                children = ['Not connected'],
                 id = 'label_status',
                 style = {'margin-left': '20'}
             )
@@ -231,34 +237,34 @@ app.layout = html.Div([
 
     ], className = 'row'),
 
-    # Live measurements
-    html.Div([
+    # # Live measurements
+    # html.Div([
 
-        # Voltage
-        html.Div([
-            html.Label(
-                'Voltage (V):',
-                ),
-            html.Br(),
-            daq.LEDDisplay(
-                id = "led_voltage",
-                value = 0.0
-            )
-        ], className = 'col-3'),
+    #     # Voltage
+    #     html.Div([
+    #         html.Label(
+    #             'Voltage (V):',
+    #             ),
+    #         html.Br(),
+    #         daq.LEDDisplay(
+    #             id = "led_voltage",
+    #             value = 0.0
+    #         )
+    #     ], className = 'col-3'),
 
-        # Current
-        html.Div([
-            html.Label(
-                'Current (mA):',
-                ),
-            html.Br(),
-            daq.LEDDisplay(
-                id = "led_current",
-                value = 000
-            )
-        ], className = 'col-3')
+    #     # Current
+    #     html.Div([
+    #         html.Label(
+    #             'Current (mA):',
+    #             ),
+    #         html.Br(),
+    #         daq.LEDDisplay(
+    #             id = "led_current",
+    #             value = 000
+    #         )
+    #     ], className = 'col-3')
 
-    ], className = 'row justify-content-around'),
+    # ], className = 'row justify-content-around'),
 
     dcc.Interval(
             id='interval-component',
@@ -361,6 +367,51 @@ def display_voltage_parameter(toggle_value):
         return {'display': 'block'}
     else: # Voltage mode
         return {'display': 'none'}
+
+
+##### Instrument connection #####
+
+# Try to connect to the instrument when the power button is pressed
+@app.callback(
+    Output('label_status', 'children'),
+    [
+        Input('button_instrument_connect', 'on')
+    ],
+    [
+        State('input_port_name', 'value')
+    ]
+)
+def connect_to_instrument(button_on, port):
+    if button_on:
+        try:
+            scm = Sourcemeter(port, 24)
+            return "Connected !"
+        except Exception as ex:
+            return "Connection Failed -- {}".format(type(ex).__name__)
+    else:
+        # Reinitialize scm
+        scm = None
+        return "Not connected"
+
+# Disable the power button unless the port name is valid
+@app.callback(
+    Output('button_instrument_connect', 'disabled'),
+    [
+        Input('input_port_name', 'value')
+    ],
+)
+def instrument_port_btn_update(text):
+    """enable or disable the connect button
+    depending on the port name
+    """
+
+    answer = True
+
+    if isinstance(text, str):
+        if text.startswith('/dev/tty.'):
+            answer = False
+
+    return answer
 
 #############################################
 # Model / Data Retrieval
