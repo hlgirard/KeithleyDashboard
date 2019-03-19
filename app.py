@@ -16,6 +16,42 @@ import dash_daq as daq
 from pymeasure.adapters import PrologixAdapter
 from pymeasure.instruments.keithley import Keithley2400
 
+
+################################
+# Semaphore and Global Variables
+################################
+
+class Semaphore:
+    '''
+    A single instrument can be operated at one time so a single instance of the app should be allowed on an individual machine.
+    '''
+    def __init__(self, filename='semaphore.txt'):
+        self.filename = filename
+        with open(self.filename, 'w') as f:
+            f.write('done')
+
+    def lock(self):
+        with open(self.filename, 'w') as f:
+            f.write('working')
+
+    def unlock(self):
+        with open(self.filename, 'w') as f:
+            f.write('done')
+
+    def is_locked(self):
+        return open(self.filename, 'r').read() == 'working'
+
+
+class GlobalVariables(object):
+    '''
+    Class used to store global variables. 
+    Note: a single instance of the app is allowed per machine
+    '''
+    def __init__(self):
+        self.scm = None # Stores the sourcemeter instrument when connected.
+
+
+
 #########################
 # Dashboard Layout / View
 #########################
@@ -32,8 +68,8 @@ fig_empty_default = go.Figure(data = [], layout = go.Layout(
     yaxis=dict(title='Current (mA)', range=[0, 20]),
     ))
 
-# Initialize a global Sourcemeter object
-scm = None
+# Initialize global variables
+glbVar = GlobalVariables()
 
 # Main layout
 app.layout = html.Div([
@@ -384,13 +420,17 @@ def display_voltage_parameter(toggle_value):
 def connect_to_instrument(button_on, port):
     if button_on:
         try:
-            scm = Sourcemeter(port, 24)
-            return "Connected !"
+            instrument = Sourcemeter(port, 24)
+            message = "Connected !"
         except Exception as ex:
-            return "Connection Failed -- {}".format(type(ex).__name__)
+            instrument = None
+            message = "Connection Failed -- {}".format(type(ex).__name__)
+        glbVar.scm = instrument
+        return message
     else:
         # Reinitialize scm
-        scm = None
+        if isinstance(glbVar.scm, Sourcemeter):
+            glbVar.scm = None
         return "Not connected"
 
 # Disable the power button unless the port name is valid
@@ -537,8 +577,20 @@ def gen_plot_saved(file_names):
 
 # start Flask server
 if __name__ == '__main__':
-    app.run_server(
-        debug=True,
-        host='0.0.0.0',
-        port=8050
-)
+
+    semaphore = Semaphore()
+
+    if not semaphore.is_locked():
+        semaphore.lock()
+        try:
+            app.run_server(
+                debug=True,
+                host='0.0.0.0',
+                port=8050
+        )
+        except Exception as ex:
+            print(ex)
+        finally:
+            semaphore.unlock()
+    else:
+        print("An instance of this app is already running on this machine.")
